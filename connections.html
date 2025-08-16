@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connections</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #121213;
+            --tile-bg-color: #1f1f21;
+            --tile-border-color: #1f1f21;
+            --tile-selected-bg: #4a4a4c;
+            --tile-selected-border: #ffffff;
+            --text-color: #ffffff;
+            --mistake-color: #4a4a4c;
+            
+            /* Category Colors */
+            --level-0-bg: #f9df6d;
+            --level-1-bg: #a0c35a;
+            --level-2-bg: #b0c4ef;
+            --level-3-bg: #d187c0;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .word-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            max-width: 500px;
+            margin: auto;
+        }
+        .word-tile {
+            background-color: var(--tile-bg-color);
+            border: 2px solid var(--tile-border-color);
+            border-radius: 8px;
+            height: 70px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            font-weight: 700;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.2s, border-color 0.2s, transform 0.1s;
+            text-transform: uppercase;
+        }
+        .word-tile.selected {
+            background-color: var(--tile-selected-bg);
+            border-color: var(--tile-selected-border);
+            transform: scale(1.05);
+        }
+        .mistake-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: var(--mistake-color);
+        }
+        .mistake-dot.filled {
+            background-color: var(--text-color);
+        }
+        .action-button {
+            background-color: var(--tile-bg-color);
+            border: 2px solid var(--text-color);
+            border-radius: 30px;
+            padding: 10px 20px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .action-button:hover {
+            background-color: var(--tile-selected-bg);
+        }
+        .found-group {
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+            margin-bottom: 10px;
+            color: #000;
+        }
+        .found-group.level-0 { background-color: var(--level-0-bg); }
+        .found-group.level-1 { background-color: var(--level-1-bg); }
+        .found-group.level-2 { background-color: var(--level-2-bg); }
+        .found-group.level-3 { background-color: var(--level-3-bg); }
+
+        @keyframes shake {
+          10%, 90% { transform: translate3d(-1px, 0, 0); }
+          20%, 80% { transform: translate3d(2px, 0, 0); }
+          30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+          40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+        .shake {
+          animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-lg mx-auto">
+        <header class="text-center mb-4">
+            <h1 class="text-4xl font-bold tracking-wider">Connections</h1>
+            <p class="text-gray-400">Create four groups of four!</p>
+        </header>
+
+        <div id="found-groups-container" class="mb-4"></div>
+        <div id="word-grid" class="word-grid mb-4"></div>
+
+        <div class="flex items-center justify-center space-x-4 mb-6">
+            <p>Mistakes remaining:</p>
+            <div id="mistakes-container" class="flex space-x-2">
+                <div class="mistake-dot"></div>
+                <div class="mistake-dot"></div>
+                <div class="mistake-dot"></div>
+                <div class="mistake-dot"></div>
+            </div>
+        </div>
+
+        <div id="action-buttons" class="flex justify-center space-x-4">
+            <button id="shuffle-btn" class="action-button">Shuffle</button>
+            <button id="deselect-btn" class="action-button">Deselect all</button>
+        </div>
+    </div>
+
+    <!-- Results Modal -->
+    <div id="results-modal" class="hidden fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
+        <div class="bg-gray-800 p-8 rounded-lg text-center shadow-xl max-w-sm w-full">
+            <h2 id="results-title" class="text-3xl font-bold mb-4"></h2>
+            <div id="results-groups" class="mb-6"></div>
+            <button id="play-again-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded text-lg">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const wordGrid = document.getElementById('word-grid');
+        const mistakesContainer = document.getElementById('mistakes-container');
+        const foundGroupsContainer = document.getElementById('found-groups-container');
+        const shuffleBtn = document.getElementById('shuffle-btn');
+        const deselectBtn = document.getElementById('deselect-btn');
+        const resultsModal = document.getElementById('results-modal');
+        const resultsTitle = document.getElementById('results-title');
+        const resultsGroups = document.getElementById('results-groups');
+        const playAgainBtn = document.getElementById('play-again-btn');
+
+        let selectedWords = [];
+        let mistakes = 0;
+        let currentPuzzle;
+        let foundGroupsCount = 0;
+        let isChecking = false;
+
+        const puzzles = [
+            {
+                groups: [
+                    { category: "FISH", words: ["Bass", "Flounder", "Salmon", "Trout"], level: 0 },
+                    { category: "FIRE ___", words: ["Ant", "Drill", "Island", "Opal"], level: 1 },
+                    { category: "SOUNDS OF A CLOCK", words: ["Chime", "Tick", "Tock", "Alarm"], level: 2 },
+                    { category: "STARTING WITH ROMAN NUMERALS", words: ["Mix", "Dice", "Livid", "Civil"], level: 3 }
+                ]
+            },
+             {
+                groups: [
+                    { category: "PARTS OF A GUITAR", words: ["Body", "Neck", "Bridge", "Head"], level: 0 },
+                    { category: "THINGS TO FOLD", words: ["Clothes", "Hands", "Paper", "Napkin"], level: 1 },
+                    { category: "HOMOPHONES", words: ["Brake", "Break", "Cell", "Sell"], level: 2 },
+                    { category: "WORDS WITH DOUBLE LETTERS", words: ["Llama", "Coffee", "Cheese", "Balloon"], level: 3 }
+                ]
+            }
+        ];
+
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        function initGame() {
+            selectedWords = [];
+            mistakes = 0;
+            foundGroupsCount = 0;
+            isChecking = false;
+            wordGrid.innerHTML = '';
+            foundGroupsContainer.innerHTML = '';
+            resultsModal.classList.add('hidden');
+            
+            currentPuzzle = puzzles[Math.floor(Math.random() * puzzles.length)];
+            const allWords = currentPuzzle.groups.flatMap(g => g.words);
+            
+            shuffle(allWords).forEach(word => {
+                const tile = document.createElement('div');
+                tile.className = 'word-tile';
+                tile.textContent = word;
+                tile.dataset.word = word;
+                tile.addEventListener('click', () => onTileClick(tile));
+                wordGrid.appendChild(tile);
+            });
+
+            updateMistakes();
+        }
+
+        function onTileClick(tile) {
+            if (isChecking) return;
+            const word = tile.dataset.word;
+
+            if (tile.classList.contains('selected')) {
+                selectedWords = selectedWords.filter(w => w !== word);
+                tile.classList.remove('selected');
+            } else {
+                if (selectedWords.length < 4) {
+                    selectedWords.push(word);
+                    tile.classList.add('selected');
+                    if (selectedWords.length === 4) {
+                        isChecking = true;
+                        // Short delay to allow user to see the 4th selection
+                        setTimeout(checkSubmission, 300);
+                    }
+                }
+            }
+        }
+
+        function deselectAll() {
+            selectedWords = [];
+            document.querySelectorAll('.word-tile.selected').forEach(t => t.classList.remove('selected'));
+        }
+
+        function updateMistakes() {
+            const dots = mistakesContainer.children;
+            for (let i = 0; i < dots.length; i++) {
+                dots[i].classList.toggle('filled', i < (4 - mistakes));
+            }
+        }
+
+        function checkSubmission() {
+            const correctGroup = currentPuzzle.groups.find(group => 
+                selectedWords.every(word => group.words.includes(word)) &&
+                group.words.every(word => selectedWords.includes(word))
+            );
+
+            if (correctGroup) {
+                foundGroupsCount++;
+                const tilesToRemove = [];
+                selectedWords.forEach(word => {
+                    const tile = wordGrid.querySelector(`[data-word="${word}"]`);
+                    if(tile) tilesToRemove.push(tile);
+                });
+
+                const groupEl = document.createElement('div');
+                groupEl.className = `found-group level-${correctGroup.level}`;
+                groupEl.innerHTML = `<p class="font-bold">${correctGroup.category}</p><p>${correctGroup.words.join(", ")}</p>`;
+                foundGroupsContainer.appendChild(groupEl);
+                
+                tilesToRemove.forEach(tile => tile.remove());
+
+                if (foundGroupsCount === 4) {
+                    endGame(true);
+                }
+            } else {
+                mistakes++;
+                updateMistakes();
+                
+                const selectedTiles = document.querySelectorAll('.word-tile.selected');
+                selectedTiles.forEach(t => t.classList.add('shake'));
+                setTimeout(() => {
+                     selectedTiles.forEach(t => t.classList.remove('shake'));
+                }, 820);
+
+                if (mistakes >= 4) {
+                    endGame(false);
+                }
+            }
+            deselectAll();
+            isChecking = false;
+        }
+        
+        function endGame(isWin) {
+            resultsTitle.textContent = isWin ? "You Win!" : "Next Time!";
+            resultsGroups.innerHTML = '';
+            
+            currentPuzzle.groups.forEach(group => {
+                const groupEl = document.createElement('div');
+                groupEl.className = `found-group level-${group.level}`;
+                groupEl.innerHTML = `<p class="font-bold">${group.category}</p><p>${group.words.join(", ")}</p>`;
+                resultsGroups.appendChild(groupEl);
+            });
+            
+            resultsModal.classList.remove('hidden');
+        }
+
+        shuffleBtn.addEventListener('click', () => {
+             const remainingTiles = Array.from(wordGrid.children);
+             shuffle(remainingTiles);
+             remainingTiles.forEach(tile => wordGrid.appendChild(tile));
+        });
+        deselectBtn.addEventListener('click', deselectAll);
+        playAgainBtn.addEventListener('click', initGame);
+
+        initGame();
+    });
+    </script>
+</body>
+</html>
